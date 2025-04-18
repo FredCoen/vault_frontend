@@ -1,8 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0e1016;
+  --foreground: #ffffff;
+  --card-bg: #1A1B26;
+  --border-color: #2a2b36;
+  --accent-color: #4F6AFF;
+  --transition-speed: 0.3s;
+}
+
+:root.light-mode {
+  --background: #f5f5f7;
+  --foreground: #000000;
+  --card-bg: #ffffff;
+  --border-color: #e0e0e0;
+  --accent-color: #4F6AFF;
+}
+
+:root.dark-mode {
+  --background: #0e1016;
+  --foreground: #a4c9ff;
+  --card-bg: #1A1B26;
+  --border-color: #2a2b36;
+  --accent-color: #4F6AFF;
 }
 
 @theme inline {
@@ -12,15 +32,75 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  transition: background-color var(--transition-speed) ease, 
+              color var(--transition-speed) ease;
+  line-height: 1.5;
+  font-size: 16px;
+}
+
+body.dark-mode {
+  text-shadow: 0 0 2px rgba(164, 201, 255, 0.1);
+}
+
+* {
+  transition: background-color var(--transition-speed) ease, 
+              border-color var(--transition-speed) ease,
+              color var(--transition-speed) ease;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Override any light mode */
+@media (prefers-color-scheme: light) {
+  :root {
+    --background: #0e1016;
+    --foreground: #ffffff;
+  }
+}
+
+/* Futuristic dark mode styles */
+.dark-card {
+  box-shadow: 0 0 15px rgba(79, 106, 255, 0.1), 
+              0 0 30px rgba(79, 106, 255, 0.05);
+  border-color: rgba(79, 106, 255, 0.2) !important;
+}
+
+:root.dark-mode .dark-card button {
+  box-shadow: 0 0 10px rgba(79, 106, 255, 0.2);
+}
+
+:root.dark-mode button {
+  text-shadow: 0 0 3px rgba(255, 255, 255, 0.3);
+}
+
+/* Subtle blue pulsing animation for dark mode */
+@keyframes subtle-glow {
+  0% { 
+    box-shadow: 0 0 15px rgba(79, 106, 255, 0.1),
+                0 0 30px rgba(79, 106, 255, 0.05);
+  }
+  50% { 
+    box-shadow: 0 0 20px rgba(79, 106, 255, 0.15),
+                0 0 40px rgba(79, 106, 255, 0.08);
+  }
+  100% { 
+    box-shadow: 0 0 15px rgba(79, 106, 255, 0.1),
+                0 0 30px rgba(79, 106, 255, 0.05);
+  }
+}
+
+:root.dark-mode .dark-card {
+  animation: subtle-glow 4s infinite ease-in-out;
 }
