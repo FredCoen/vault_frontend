@@ -3,42 +3,264 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../theme-provider';
 import Image from 'next/image';
-import { useAccount, useWriteContract, useReadContract, useBalance } from 'wagmi';
+import { useAccount, useWriteContract, useReadContract, useBalance, useWatchContractEvent, usePublicClient } from 'wagmi';
 import { VaultABI } from '../contracts/VaultABI';
 import { parseEther, formatEther } from 'viem';
 
 // Contract address for the Vault
-const BASE_VAULT_CONTRACT_ADDRESS = '0x557BC97cFbf6Dc01218d42F194e56fB6A0eDEb76'; // Replace with actual contract address
+const OPTIMISM_VAULT_CONTRACT_ADDRESS = '0x7840fA63D0649f7D5E3a0E9040316077b1555743'; // Contract address on Optimism Sepolia
+// Note: This contract is deployed on Optimism Sepolia (11155420) network
+// If events are emitted on a different network than the one you're connected to, they won't appear
+
+// Interface for intent events
+interface IntentEvent {
+  id: string;
+  date: string;
+  netFee: string;
+}
 
 export default function DepositCard() {
+  console.log('DepositCard component initialized');
   const [ethAmount, setEthAmount] = useState('0');
   const [usdValue, setUsdValue] = useState('$0.00');
   const [intentsExpanded, setIntentsExpanded] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
-  const [totalFeesEarned, setTotalFeesEarned] = useState('0.0025 ETH');
-  const [apy24h, setApy24h] = useState('160%');
+  const [totalFeesEarned, setTotalFeesEarned] = useState('0 ETH');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState('');
   const [isDepositing, setIsDepositing] = useState(false);
+  const [intentEvents, setIntentEvents] = useState<IntentEvent[]>([]);
   
   const { theme } = useTheme();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
+  const publicClient = usePublicClient();
+  
+  // Log chain information for debugging
+  useEffect(() => {
+    console.log('Connected chain ID:', chainId);
+    console.log('Is Optimism Sepolia:', chainId === 11155420);
+    console.log('Public client chain:', publicClient?.chain?.id);
+  }, [chainId, publicClient]);
   
   // Get user's ETH balance
   const { data: balanceData } = useBalance({
     address: address,
   });
   
+  // Read total assets (TVL) from the contract
+  const { data: totalAssetsData, refetch: refetchTotalAssets } = useReadContract({
+    address: OPTIMISM_VAULT_CONTRACT_ADDRESS,
+    abi: VaultABI,
+    functionName: 'totalAssets',
+  });
+  
+  // Watch for Deposit events to update TVL
+  useWatchContractEvent({
+    address: OPTIMISM_VAULT_CONTRACT_ADDRESS,
+    abi: VaultABI,
+    eventName: 'Deposit',
+    onLogs: () => {
+      console.log("Deposit event detected - refreshing TVL");
+      refetchTotalAssets();
+    },
+  });
+  
+  // Watch for Withdraw events to update TVL
+  useWatchContractEvent({
+    address: OPTIMISM_VAULT_CONTRACT_ADDRESS,
+    abi: VaultABI,
+    eventName: 'Withdraw',
+    onLogs: () => {
+      console.log("Withdraw event detected - refreshing TVL");
+      refetchTotalAssets();
+    },
+  });
+  
+  // Function to update total fees earned
+  const updateTotalFeesEarned = (events: IntentEvent[]) => {
+    // Sum all fees (remove " ETH" suffix and convert to number)
+    const totalFees = events.reduce((sum, event) => {
+      const feeValue = parseFloat(event.netFee.replace(' ETH', ''));
+      return sum + feeValue;
+    }, 0);
+    
+    // Format with 5 decimal places
+    setTotalFeesEarned(`${totalFees.toFixed(5)} ETH`);
+  };
+  
+  // Watch for IntentExecuted events to update intent list
+  useWatchContractEvent({
+    address: OPTIMISM_VAULT_CONTRACT_ADDRESS,
+    abi: VaultABI,
+    eventName: 'IntentExecuted',
+    onLogs: (logs) => {
+      console.log('IntentExecuted event received:', logs);
+      logs.forEach((log) => {
+        console.log('Processing log:', log);
+        if (log.args) {
+          const { outputAmount, inputAmount, depositId, originChainId } = log.args;
+          console.log('Event args:', { outputAmount, inputAmount, depositId, originChainId });
+          
+          // Calculate fee in ETH (inputAmount - outputAmount)
+          const outputAmountEth = formatEther(outputAmount as bigint);
+          const inputAmountEth = formatEther(inputAmount as bigint);
+          const feeCollected = (Number(inputAmountEth) - Number(outputAmountEth)).toFixed(5);
+          console.log('Calculated values:', { outputAmountEth, inputAmountEth, feeCollected });
+          
+          // Format current date
+          const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+          
+          // Create new intent event
+          const newIntent: IntentEvent = {
+            id: depositId?.toString() || '0',
+            date: currentDate,
+            netFee: `${feeCollected} ETH`
+          };
+          console.log('Adding new intent to UI:', newIntent);
+          
+          // Add to the list (prepend to show newest first)
+          setIntentEvents(prevEvents => {
+            const updatedEvents = [newIntent, ...prevEvents];
+            console.log('Updated events list:', updatedEvents);
+            
+            // Update total fees whenever we add a new event
+            updateTotalFeesEarned(updatedEvents);
+            
+            return updatedEvents;
+          });
+        }
+      });
+    },
+  });
+  
   // Write contract hook
   const { writeContractAsync, status, error } = useWriteContract();
-
-  // Dummy data for intents filled
-  const intentsData = [
-    { id: '0x1a2b...3c4d', date: '2023-11-25', netFee: '0.00045 ETH' },
-    { id: '0x5e6f...7g8h', date: '2023-11-24', netFee: '0.00032 ETH' },
-    { id: '0x9i0j...1k2l', date: '2023-11-23', netFee: '0.00078 ETH' },
-    { id: '0x3m4n...5o6p', date: '2023-11-22', netFee: '0.00021 ETH' },
-  ];
+  
+  // Update ethAmount when totalAssetsData changes
+  useEffect(() => {
+    if (totalAssetsData) {
+      const ethValue = formatEther(totalAssetsData);
+      setEthAmount(Number(ethValue).toFixed(4));
+    }
+  }, [totalAssetsData]);
+  
+  // Add polling for TVL updates every 10 seconds
+  useEffect(() => {
+    console.log("Setting up TVL polling every 10 seconds");
+    
+    // Initial fetch
+    refetchTotalAssets();
+    
+    // Set up polling interval
+    const interval = setInterval(() => {
+      console.log("Polling TVL update");
+      refetchTotalAssets();
+    }, 10000); // 10 seconds
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, [refetchTotalAssets]);
+  
+  // Manual polling for IntentExecuted events
+  useEffect(() => {
+    if (!publicClient) return;
+    
+    console.log("Setting up manual event polling");
+    console.log("Current chain ID:", publicClient.chain.id);
+    console.log("Contract address being monitored:", OPTIMISM_VAULT_CONTRACT_ADDRESS);
+    
+    const fetchRecentEvents = async () => {
+      try {
+        console.log("Manually checking for IntentExecuted events...");
+        
+        // Get current block number
+        const blockNumber = await publicClient.getBlockNumber();
+        // Look back ~1000 blocks, convert to number if needed
+        const fromBlock = blockNumber > BigInt(1000) ? blockNumber - BigInt(1000) : BigInt(0);
+        
+        console.log(`Checking for events from block ${fromBlock} to ${blockNumber}`);
+        
+        // Manually get logs
+        const logs = await publicClient.getLogs({
+          address: OPTIMISM_VAULT_CONTRACT_ADDRESS,
+          event: {
+            type: 'event',
+            name: 'IntentExecuted',
+            inputs: [
+              { name: 'outputAmount', type: 'uint256', indexed: false },
+              { name: 'inputAmount', type: 'uint256', indexed: false },
+              { name: 'depositId', type: 'uint256', indexed: false },
+              { name: 'originChainId', type: 'uint256', indexed: false }
+            ]
+          },
+          fromBlock,
+          toBlock: blockNumber
+        });
+        
+        console.log("Manual event check complete, found logs:", logs);
+        
+        if (logs.length > 0) {
+          // Process the logs
+          logs.forEach(log => {
+            if (log.args) {
+              const { outputAmount, inputAmount, depositId, originChainId } = log.args;
+              
+              // Check for undefined values and provide defaults
+              const safeOutputAmount = outputAmount || BigInt(0);
+              const safeInputAmount = inputAmount || BigInt(0);
+              const safeDepositId = depositId || BigInt(0);
+              
+              // Calculate fee in ETH (inputAmount - outputAmount)
+              const outputAmountEth = formatEther(safeOutputAmount);
+              const inputAmountEth = formatEther(safeInputAmount);
+              const feeCollected = (Number(inputAmountEth) - Number(outputAmountEth)).toFixed(5);
+              
+              // Format current date
+              const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+              
+              // Create new intent event
+              const newIntent: IntentEvent = {
+                id: safeDepositId.toString(),
+                date: currentDate,
+                netFee: `${feeCollected} ETH`
+              };
+              
+              // Add to the list (avoiding duplicates by checking id)
+              setIntentEvents(prevEvents => {
+                const eventExists = prevEvents.some(event => event.id === newIntent.id);
+                if (eventExists) return prevEvents;
+                
+                const updatedEvents = [newIntent, ...prevEvents];
+                // Update total fees whenever we add a new event
+                updateTotalFeesEarned(updatedEvents);
+                return updatedEvents;
+              });
+            }
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching manual events:", error);
+      }
+    };
+    
+    // Call once immediately
+    fetchRecentEvents();
+    
+    // Set up polling interval
+    const interval = setInterval(fetchRecentEvents, 30000); // Poll every 30 seconds
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, [publicClient]);
+  
+  // Update total fees earned when component mounts
+  useEffect(() => {
+    if (intentEvents.length > 0) {
+      updateTotalFeesEarned(intentEvents);
+    }
+  }, []);
   
   const isDarkMode = theme === 'dark';
 
@@ -70,7 +292,7 @@ export default function DepositCard() {
       const parsedAmount = parseEther(depositAmount);
       
       await writeContractAsync({
-        address: BASE_VAULT_CONTRACT_ADDRESS,
+        address: OPTIMISM_VAULT_CONTRACT_ADDRESS,
         abi: VaultABI,
         functionName: 'deposit',
         args: [parsedAmount, address]
@@ -78,6 +300,9 @@ export default function DepositCard() {
       
       // Close modal and reset form after successful deposit
       handleCloseModal();
+      
+      // Refresh the TVL after deposit (though the event listener should handle this too)
+      refetchTotalAssets();
     } catch (err) {
       console.error('Deposit failed:', err);
     } finally {
@@ -100,8 +325,7 @@ export default function DepositCard() {
         </div>
         <h1 className="text-xl font-bold mb-4">ETH intent filler Strategy</h1>
         <div className="text-sm mb-1 text-gray-400">TVL</div>
-        <h2 className={`text-2xl md:text-3xl font-bold mb-1 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>{ethAmount} ETH</h2>
-        <p className="text-xl">{usdValue}</p>
+        <h2 className={`text-2xl md:text-3xl font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>{ethAmount} ETH</h2>
       </div>
       
       <div className="border-t border-[var(--border-color)] py-6 text-left">
@@ -130,13 +354,6 @@ export default function DepositCard() {
             </p>
           </div>
         )}
-        
-        <div className="flex justify-between items-center mb-6">
-          <span className="text-[var(--foreground)] opacity-80 text-left text-lg">24h APY</span>
-          <div className="flex items-center">
-            <span className={`font-medium text-lg ${isDarkMode ? 'text-emerald-400' : 'text-green-500'}`}>{apy24h}</span>
-          </div>
-        </div>
         
         <div className="flex justify-between items-center mb-6">
           <span className="text-[var(--foreground)] opacity-80 text-left text-lg">Total Fees Earned</span>
@@ -168,16 +385,22 @@ export default function DepositCard() {
             <div className="grid grid-cols-3 gap-3 mb-3 font-medium text-[var(--foreground)] opacity-70">
               <div>ID</div>
               <div>Date</div>
-              <div>Net Fee Earned</div>
+              <div>Fee Collected</div>
             </div>
             
-            {intentsData.map((intent) => (
-              <div key={intent.id} className="grid grid-cols-3 gap-3 py-3 border-t border-[var(--border-color)]">
-                <div className="truncate">{intent.id}</div>
-                <div>{intent.date}</div>
-                <div className={`${isDarkMode ? 'text-emerald-400' : 'text-green-500'}`}>{intent.netFee}</div>
+            {intentEvents.length > 0 ? (
+              intentEvents.map((intent, index) => (
+                <div key={`${intent.id}-${index}`} className="grid grid-cols-3 gap-3 py-3 border-t border-[var(--border-color)]">
+                  <div className="truncate">{intent.id}</div>
+                  <div>{intent.date}</div>
+                  <div className={`${isDarkMode ? 'text-emerald-400' : 'text-green-500'}`}>{intent.netFee}</div>
+                </div>
+              ))
+            ) : (
+              <div className="py-4 text-center text-[var(--foreground)] opacity-70">
+                No intents filled yet.
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>

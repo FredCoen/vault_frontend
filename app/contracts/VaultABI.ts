@@ -247,6 +247,13 @@ export const VaultABI = [
   },
   {
     "type": "function",
+    "name": "totalGrossFeesEarned",
+    "inputs": [],
+    "outputs": [{"name": "", "type": "uint256", "internalType": "uint256"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "totalSupply",
     "inputs": [],
     "outputs": [{"name": "", "type": "uint256", "internalType": "uint256"}],
@@ -316,6 +323,7 @@ export const VaultABI = [
     "name": "IntentExecuted",
     "inputs": [
       {"name": "outputAmount", "type": "uint256", "indexed": false, "internalType": "uint256"},
+      {"name": "inputAmount", "type": "uint256", "indexed": false, "internalType": "uint256"},
       {"name": "depositId", "type": "uint256", "indexed": false, "internalType": "uint256"},
       {"name": "originChainId", "type": "uint256", "indexed": false, "internalType": "uint256"}
     ],
@@ -342,5 +350,119 @@ export const VaultABI = [
       {"name": "shares", "type": "uint256", "indexed": false, "internalType": "uint256"}
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "ERC20InsufficientAllowance",
+    "inputs": [
+      {"name": "spender", "type": "address", "internalType": "address"},
+      {"name": "allowance", "type": "uint256", "internalType": "uint256"},
+      {"name": "needed", "type": "uint256", "internalType": "uint256"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC20InsufficientBalance",
+    "inputs": [
+      {"name": "sender", "type": "address", "internalType": "address"},
+      {"name": "balance", "type": "uint256", "internalType": "uint256"},
+      {"name": "needed", "type": "uint256", "internalType": "uint256"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC20InvalidApprover",
+    "inputs": [
+      {"name": "approver", "type": "address", "internalType": "address"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC20InvalidReceiver",
+    "inputs": [
+      {"name": "receiver", "type": "address", "internalType": "address"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC20InvalidSender",
+    "inputs": [
+      {"name": "sender", "type": "address", "internalType": "address"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC20InvalidSpender",
+    "inputs": [
+      {"name": "spender", "type": "address", "internalType": "address"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC4626ExceededMaxDeposit",
+    "inputs": [
+      {"name": "receiver", "type": "address", "internalType": "address"},
+      {"name": "assets", "type": "uint256", "internalType": "uint256"},
+      {"name": "max", "type": "uint256", "internalType": "uint256"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC4626ExceededMaxMint",
+    "inputs": [
+      {"name": "receiver", "type": "address", "internalType": "address"},
+      {"name": "shares", "type": "uint256", "internalType": "uint256"},
+      {"name": "max", "type": "uint256", "internalType": "uint256"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC4626ExceededMaxRedeem",
+    "inputs": [
+      {"name": "owner", "type": "address", "internalType": "address"},
+      {"name": "shares", "type": "uint256", "internalType": "uint256"},
+      {"name": "max", "type": "uint256", "internalType": "uint256"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC4626ExceededMaxWithdraw",
+    "inputs": [
+      {"name": "owner", "type": "address", "internalType": "address"},
+      {"name": "assets", "type": "uint256", "internalType": "uint256"},
+      {"name": "max", "type": "uint256", "internalType": "uint256"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InsufficientAssets",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NegativeFee",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotSocket",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {"name": "token", "type": "address", "internalType": "address"}
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SocketAlreadyInitialized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TimelockActive",
+    "inputs": []
   }
 ] as const; 

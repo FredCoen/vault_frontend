@@ -62,13 +62,55 @@ const arbitrumSepolia = {
   testnet: true,
 } as const satisfies Chain;
 
+// Define Optimism Sepolia testnet
+const optimismSepolia = {
+  id: 11155420,
+  name: 'Optimism Sepolia',
+  nativeCurrency: {
+    name: 'Ethereum',
+    symbol: 'ETH',
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: {
+      http: ['https://sepolia.optimism.io'],
+    },
+    public: {
+      http: ['https://sepolia.optimism.io'],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: 'Optimism Explorer',
+      url: 'https://sepolia-optimism.etherscan.io',
+    },
+  },
+  testnet: true,
+} as const satisfies Chain;
+
 const config = getDefaultConfig({
   appName: 'Base Smart Contract Demo',
   projectId,
-  chains: [baseSepolia, arbitrumSepolia],
+  chains: [optimismSepolia, baseSepolia, arbitrumSepolia],
   transports: {
-    [baseSepolia.id]: http(),
-    [arbitrumSepolia.id]: http(),
+    [baseSepolia.id]: http('https://sepolia.base.org', {
+      batch: true,
+      retryCount: 5,
+      retryDelay: 100,
+      timeout: 30_000
+    }),
+    [arbitrumSepolia.id]: http('https://sepolia-rollup.arbitrum.io/rpc', {
+      batch: true,
+      retryCount: 5,
+      retryDelay: 100,
+      timeout: 30_000
+    }),
+    [optimismSepolia.id]: http('https://sepolia.optimism.io', {
+      batch: true,
+      retryCount: 5,
+      retryDelay: 100,
+      timeout: 30_000
+    }),
   },
   ssr: true,
 });
