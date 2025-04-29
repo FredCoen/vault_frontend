@@ -1,7 +1,5 @@
 # Socket Solver Vault UI
 
-## Prerequisites
-
 ## Setup
 
 1. Clone the repository:
