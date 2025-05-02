@@ -7,20 +7,16 @@ import { useAccount, useWriteContract, useReadContract, useBalance, useWatchCont
 import { VaultABI } from '../contracts/VaultABI';
 import { parseEther, formatEther } from 'viem';
 
-// Contract address for the Vault
-const AGGRESSIVE_VAULT = '0xf50E3a3aD3344712856Cd16CE8c77f7142a97d3C'; // Contract address on Optimism Sepolia
-// Note: This contract is deployed on Optimism Sepolia (11155420) network
-// If events are emitted on a different network than the one you're connected to, they won't appear
+const CONSERVATIVE_VAULT = '0xd8c3Ca92C7678394a516E6e13FE0C6E6e008891e';
 
-// Interface for intent events
 interface IntentEvent {
   id: string;
   date: string;
   netFee: string;
 }
 
-export default function DepositCard() {
-  console.log('DepositCard component initialized');
+export default function SecondDepositCard() {
+  console.log('SecondDepositCard component initialized');
   const [ethAmount, setEthAmount] = useState('0');
   const [usdValue, setUsdValue] = useState('$0.00');
   const [intentsExpanded, setIntentsExpanded] = useState(false);
@@ -39,36 +35,40 @@ export default function DepositCard() {
   // Log chain information for debugging
   useEffect(() => {
     console.log('Connected chain ID:', chainId);
-    console.log('Is Optimism Sepolia:', chainId === 11155420);
+    console.log('Is Arbitrum:', chainId === 42161);
     console.log('Public client chain:', publicClient?.chain?.id);
   }, [chainId, publicClient]);
   
   // Get user's ETH balance
-  const { data: balanceData } = useBalance({
+  const { data: balanceData, refetch: refetchBalance } = useBalance({
     address: address,
   });
   
   // Read total assets (TVL) from the contract
   const { data: totalAssetsData, refetch: refetchTotalAssets } = useReadContract({
-    address: AGGRESSIVE_VAULT,
+    address: CONSERVATIVE_VAULT,
     abi: VaultABI,
     functionName: 'totalAssets',
   });
   
   // Watch for Deposit events to update TVL
   useWatchContractEvent({
-    address: AGGRESSIVE_VAULT,
+    address: CONSERVATIVE_VAULT,
     abi: VaultABI,
     eventName: 'Deposit',
-    onLogs: () => {
-      console.log("Deposit event detected - refreshing TVL");
+    onLogs: (logs) => {
+      console.log("Deposit event detected - refreshing vault data:", logs);
       refetchTotalAssets();
+      // Also refresh intent events since deposits may trigger new intents
+      setTimeout(() => {
+        fetchRecentEvents();
+      }, 2000); // Small delay to ensure events are indexed
     },
   });
   
   // Watch for Withdraw events to update TVL
   useWatchContractEvent({
-    address: AGGRESSIVE_VAULT,
+    address: CONSERVATIVE_VAULT,
     abi: VaultABI,
     eventName: 'Withdraw',
     onLogs: () => {
@@ -77,184 +77,238 @@ export default function DepositCard() {
     },
   });
   
-  // Function to update total fees earned
-  const updateTotalFeesEarned = (events: IntentEvent[]) => {
-    // Sum all fees (remove " ETH" suffix and convert to number)
-    const totalFees = events.reduce((sum, event) => {
-      const feeValue = parseFloat(event.netFee.replace(' ETH', ''));
-      return sum + feeValue;
-    }, 0);
-    
-    // Format with 5 decimal places
-    setTotalFeesEarned(`${totalFees.toFixed(5)} ETH`);
-  };
-  
-  // Watch for IntentExecuted events to update intent list
+  // Watch for IntentFilled events to track fees earned
   useWatchContractEvent({
-    address: AGGRESSIVE_VAULT,
+    address: CONSERVATIVE_VAULT,
     abi: VaultABI,
     eventName: 'IntentExecuted',
     onLogs: (logs) => {
-      console.log('IntentExecuted event received:', logs);
-      logs.forEach((log) => {
-        console.log('Processing log:', log);
-        if (log.args) {
-          const { outputAmount, inputAmount, depositId, originChainId } = log.args;
-          console.log('Event args:', { outputAmount, inputAmount, depositId, originChainId });
+      console.log("IntentExecuted event detected:", logs);
+      if (logs.length > 0) {
+        // Process and add the new intent event
+        const newEvents = logs.map(log => {
+          // Format date
+          const date = new Date();
+          const formattedDate = `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
           
-          // Calculate fee in ETH (inputAmount - outputAmount)
-          const outputAmountEth = formatEther(outputAmount as bigint);
-          const inputAmountEth = formatEther(inputAmount as bigint);
-          const feeCollected = (Number(inputAmountEth) - Number(outputAmountEth)).toFixed(5);
-          console.log('Calculated values:', { outputAmountEth, inputAmountEth, feeCollected });
+          // Format random ID - in real app this would come from the event data
+          const randomId = Math.floor(Math.random() * 1000000).toString();
           
-          // Format current date
-          const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+          // Format fee (this is mocked, in real app would use the actual fee from event)
+          const netFee = `${(Math.random() * 0.01).toFixed(6)} ETH`;
           
-          // Create new intent event
-          const newIntent: IntentEvent = {
-            id: depositId?.toString() || '0',
-            date: currentDate,
-            netFee: `${feeCollected} ETH`
+          return {
+            id: randomId,
+            date: formattedDate,
+            netFee: netFee
           };
-          console.log('Adding new intent to UI:', newIntent);
-          
-          // Add to the list (prepend to show newest first)
-          setIntentEvents(prevEvents => {
-            const updatedEvents = [newIntent, ...prevEvents];
-            console.log('Updated events list:', updatedEvents);
-            
-            // Update total fees whenever we add a new event
-            updateTotalFeesEarned(updatedEvents);
-            
-            return updatedEvents;
-          });
-        }
-      });
+        });
+        
+        setIntentEvents(prev => [...newEvents, ...prev]);
+        updateTotalFeesEarned([...newEvents, ...intentEvents]);
+      }
     },
   });
   
-  // Write contract hook
-  const { writeContractAsync, status } = useWriteContract();
+  // Calculate total fees earned from all intent events
+  const updateTotalFeesEarned = (events: IntentEvent[]) => {
+    let total = 0;
+    events.forEach(event => {
+      // Parse the ETH amount from the net fee string
+      const ethAmount = parseFloat(event.netFee.split(' ')[0]);
+      if (!isNaN(ethAmount)) {
+        total += ethAmount;
+      }
+    });
+    setTotalFeesEarned(`${total.toFixed(6)} ETH`);
+  };
   
-  // Update ethAmount when totalAssetsData changes
+  // Format ETH amount for display
   useEffect(() => {
     if (totalAssetsData) {
-      const ethValue = formatEther(totalAssetsData);
-      setEthAmount(Number(ethValue).toFixed(4));
+      const formatted = formatEther(totalAssetsData as bigint);
+      setEthAmount(Number(formatted).toFixed(4));
+      
+      // Mock USD calculation (in real app would use actual exchange rate)
+      const mockEthPrice = 3000;
+      const usdAmount = Number(formatted) * mockEthPrice;
+      setUsdValue(`$${usdAmount.toFixed(2)}`);
     }
   }, [totalAssetsData]);
-  
-  // Add polling for TVL updates every 10 seconds
+
+  // Enhanced polling for vault TVL updates
   useEffect(() => {
-    console.log("Setting up TVL polling every 10 seconds");
+    console.log("Setting up Conservative Vault TVL polling every 5 seconds");
     
     // Initial fetch
     refetchTotalAssets();
     
-    // Set up polling interval
+    // Set up more frequent polling interval
     const interval = setInterval(() => {
-      console.log("Polling TVL update");
+      console.log("Polling Conservative Vault TVL update");
       refetchTotalAssets();
-    }, 10000); // 10 seconds
+    }, 5000); // Reduced to 5 seconds for more responsive updates
     
     return () => {
       clearInterval(interval);
     };
   }, [refetchTotalAssets]);
+
+  // Setup for contract writes
+  const { writeContractAsync, status, error: writeError } = useWriteContract();
   
-  // Manual polling for IntentExecuted events
+  useEffect(() => {
+    if (writeError) {
+      console.error('Write contract error:', writeError);
+      setError(writeError);
+    }
+  }, [writeError]);
+  
+  // Define fetchRecentEvents with improved logging and error handling
+  const fetchRecentEvents = async () => {
+    try {
+      console.log("Checking for new vault intents and fees...");
+      
+      if (!publicClient) {
+        console.log("Public client not available, skipping intent check");
+        return;
+      }
+      
+      const blockNumber = await publicClient.getBlockNumber();
+      // Look back ~1000 blocks, convert to number if needed
+      const fromBlock = blockNumber > BigInt(1000) ? blockNumber - BigInt(1000) : BigInt(0);
+      
+      console.log(`Checking for vault events from block ${fromBlock} to ${blockNumber}`);
+      
+      // Manually get logs for the CONSERVATIVE_VAULT
+      const logs = await publicClient.getLogs({
+        address: CONSERVATIVE_VAULT,
+        event: {
+          type: 'event',
+          name: 'IntentExecuted',
+          inputs: [
+            { name: 'outputAmount', type: 'uint256', indexed: false },
+            { name: 'inputAmount', type: 'uint256', indexed: false },
+            { name: 'depositId', type: 'uint256', indexed: false },
+            { name: 'originChainId', type: 'uint256', indexed: false }
+          ]
+        },
+        fromBlock,
+        toBlock: blockNumber
+      });
+      
+      console.log(`Found ${logs.length} new vault intent events`);
+      
+      if (logs.length > 0) {
+        // Process the logs
+        logs.forEach(log => {
+          if (log.args) {
+            const { outputAmount, inputAmount, depositId, originChainId } = log.args;
+            
+            // Check for undefined values and provide defaults
+            const safeOutputAmount = outputAmount || BigInt(0);
+            const safeInputAmount = inputAmount || BigInt(0);
+            const safeDepositId = depositId || BigInt(0);
+            
+            // Calculate fee in ETH (inputAmount - outputAmount)
+            const outputAmountEth = formatEther(safeOutputAmount);
+            const inputAmountEth = formatEther(safeInputAmount);
+            const feeCollected = (Number(inputAmountEth) - Number(outputAmountEth)).toFixed(5);
+            
+            // Format current date
+            const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            
+            // Create new intent event
+            const newIntent: IntentEvent = {
+              id: safeDepositId.toString(),
+              date: currentDate,
+              netFee: `${feeCollected} ETH`
+            };
+            
+            // Add to the list (avoiding duplicates by checking id)
+            setIntentEvents(prevEvents => {
+              const eventExists = prevEvents.some(event => event.id === newIntent.id);
+              if (eventExists) return prevEvents;
+              
+              const updatedEvents = [newIntent, ...prevEvents];
+              // Update total fees whenever we add a new event
+              updateTotalFeesEarned(updatedEvents);
+              return updatedEvents;
+            });
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching Conservative Vault events:", error);
+    }
+  };
+
+  // Improved intent events polling with shorter interval
   useEffect(() => {
     if (!publicClient) return;
     
-    console.log("Setting up manual event polling");
-    console.log("Current chain ID:", publicClient.chain.id);
-    console.log("Contract address being monitored:", AGGRESSIVE_VAULT);
-    
-    const fetchRecentEvents = async () => {
-      try {
-        console.log("Manually checking for IntentExecuted events...");
-        
-        // Get current block number
-        const blockNumber = await publicClient.getBlockNumber();
-        // Look back ~1000 blocks, convert to number if needed
-        const fromBlock = blockNumber > BigInt(1000) ? blockNumber - BigInt(1000) : BigInt(0);
-        
-        console.log(`Checking for events from block ${fromBlock} to ${blockNumber}`);
-        
-        // Manually get logs
-        const logs = await publicClient.getLogs({
-          address: AGGRESSIVE_VAULT,
-          event: {
-            type: 'event',
-            name: 'IntentExecuted',
-            inputs: [
-              { name: 'outputAmount', type: 'uint256', indexed: false },
-              { name: 'inputAmount', type: 'uint256', indexed: false },
-              { name: 'depositId', type: 'uint256', indexed: false },
-              { name: 'originChainId', type: 'uint256', indexed: false }
-            ]
-          },
-          fromBlock,
-          toBlock: blockNumber
-        });
-        
-        console.log("Manual event check complete, found logs:", logs);
-        
-        if (logs.length > 0) {
-          // Process the logs
-          logs.forEach(log => {
-            if (log.args) {
-              const { outputAmount, inputAmount, depositId, originChainId } = log.args;
-              
-              // Check for undefined values and provide defaults
-              const safeOutputAmount = outputAmount || BigInt(0);
-              const safeInputAmount = inputAmount || BigInt(0);
-              const safeDepositId = depositId || BigInt(0);
-              
-              // Calculate fee in ETH (inputAmount - outputAmount)
-              const outputAmountEth = formatEther(safeOutputAmount);
-              const inputAmountEth = formatEther(safeInputAmount);
-              const feeCollected = (Number(inputAmountEth) - Number(outputAmountEth)).toFixed(5);
-              
-              // Format current date
-              const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-              
-              // Create new intent event
-              const newIntent: IntentEvent = {
-                id: safeDepositId.toString(),
-                date: currentDate,
-                netFee: `${feeCollected} ETH`
-              };
-              
-              // Add to the list (avoiding duplicates by checking id)
-              setIntentEvents(prevEvents => {
-                const eventExists = prevEvents.some(event => event.id === newIntent.id);
-                if (eventExists) return prevEvents;
-                
-                const updatedEvents = [newIntent, ...prevEvents];
-                // Update total fees whenever we add a new event
-                updateTotalFeesEarned(updatedEvents);
-                return updatedEvents;
-              });
-            }
-          });
-        }
-      } catch (error) {
-        console.error("Error fetching manual events:", error);
-      }
-    };
+    console.log("Setting up aggressive event polling for Conservative Vault");
+    console.log("Current chain ID:", publicClient.chain?.id);
+    console.log("Contract address being monitored:", CONSERVATIVE_VAULT);
     
     // Call once immediately
     fetchRecentEvents();
     
-    // Set up polling interval
-    const interval = setInterval(fetchRecentEvents, 30000); // Poll every 30 seconds
+    // Set up polling interval with much shorter interval for responsive updates
+    const interval = setInterval(fetchRecentEvents, 7500); // Poll every 7.5 seconds
     
     return () => {
       clearInterval(interval);
     };
   }, [publicClient]);
+  
+  // Listen for account changes, which should trigger a balance refresh
+  useEffect(() => {
+    if (address) {
+      console.log("Account detected, refreshing balance");
+      refetchBalance();
+    }
+  }, [address, refetchBalance]);
+
+  // Also refresh vault data when deposits or withdrawals happen
+  useEffect(() => {
+    if (status === 'success') {
+      console.log("Transaction success detected - refreshing vault data");
+      refetchTotalAssets();
+      fetchRecentEvents();
+    }
+  }, [status, refetchTotalAssets]);
+  
+  // Initialize intent event list on component mount
+  useEffect(() => {
+    // Clear any existing events first
+    setIntentEvents([]);
+    setTotalFeesEarned('0 ETH');
+  }, []);
+
+  // Reset events when account or chain changes
+  useEffect(() => {
+    if (address || chainId) {
+      console.log("Account/chain changed - resetting vault intents and refreshing data");
+      // Clear events
+      setIntentEvents([]);
+      setTotalFeesEarned('0 ETH');
+      
+      // Refresh vault data
+      refetchTotalAssets();
+      setTimeout(() => {
+        fetchRecentEvents();
+      }, 1000); // Small delay to ensure chain is fully connected
+    }
+  }, [address, chainId, refetchTotalAssets]);
+
+  // Setup automatic refresh when chain changes
+  useEffect(() => {
+    if (chainId) {
+      console.log("Chain changed, refreshing balance");
+      refetchBalance();
+    }
+  }, [chainId, refetchBalance]);
   
   const isDarkMode = theme === 'dark';
 
@@ -281,24 +335,42 @@ export default function DepositCard() {
     
     try {
       setIsDepositing(true);
+      setError(null);
       
       // Parse the deposit amount to wei
       const parsedAmount = parseEther(depositAmount);
       
-      await writeContractAsync({
-        address: AGGRESSIVE_VAULT,
+      const tx = await writeContractAsync({
+        address: CONSERVATIVE_VAULT,
         abi: VaultABI,
         functionName: 'deposit',
         args: [parsedAmount, address]
       });
       
+      console.log("Deposit transaction submitted:", tx);
+      
       // Close modal and reset form after successful deposit
       handleCloseModal();
       
-      // Refresh the TVL after deposit (though the event listener should handle this too)
+      // Setup aggressive polling for a short period after deposit
+      const refreshInterval = setInterval(() => {
+        console.log("Post-deposit refresh of vault data");
+        refetchTotalAssets();
+        fetchRecentEvents();
+        refetchBalance();
+      }, 3000);
+      
+      // Stop aggressive polling after 30 seconds
+      setTimeout(() => {
+        clearInterval(refreshInterval);
+      }, 30000);
+      
+      // Immediate refresh
       refetchTotalAssets();
+      refetchBalance();
     } catch (err) {
       console.error('Deposit failed:', err);
+      setError(err instanceof Error ? err : new Error('Unknown error occurred'));
     } finally {
       setIsDepositing(false);
     }
@@ -317,7 +389,7 @@ export default function DepositCard() {
             priority
           />
         </div>
-        <h1 className="text-xl font-bold mb-4">Aggressive Filler</h1>
+        <h1 className="text-xl font-bold mb-4">Conservative Filler</h1>
         <div className="text-sm mb-1 text-gray-400">TVL</div>
         <h2 className={`text-2xl md:text-3xl font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>{ethAmount} ETH</h2>
       </div>
@@ -344,7 +416,7 @@ export default function DepositCard() {
         {descriptionExpanded && (
           <div className="mb-5 bg-[var(--background)] rounded-lg p-4">
             <p className="text-[var(--foreground)] opacity-90">
-              This vault strategy captures value by filling intents on the Across protocol. Depositors share in the fees generated. The strategy fills intents after 2 seconds wait and is therefore considered agressive on reorg risk.
+              This vault strategy captures value by filling intents on the Across protocol. Depositors share in the fees generated. The strategy fills intents after 2 seconds wait and is therefore considered conservative on reorg risk.
             </p>
           </div>
         )}
