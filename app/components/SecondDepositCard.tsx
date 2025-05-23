@@ -5,9 +5,15 @@ import { useTheme } from '../theme-provider';
 import Image from 'next/image';
 import { useAccount, useWriteContract, useReadContract, useBalance, useWatchContractEvent, usePublicClient } from 'wagmi';
 import { VaultABI } from '../contracts/VaultABI';
-import { parseEther, formatEther } from 'viem';
+import { parseEther, formatEther, createPublicClient, http, Log } from 'viem';
+import { optimismSepolia } from 'viem/chains';
+import { CONTRACT_ADDRESSES, CHAIN_IDS, getContractAddress } from "../config/contractAddresses";
 
-const CONSERVATIVE_VAULT = '0xd8c3Ca92C7678394a516E6e13FE0C6E6e008891e';
+// Create a dedicated Optimism Sepolia client
+const optimismSepoliaClient = createPublicClient({
+  chain: optimismSepolia,
+  transport: http('https://sepolia.optimism.io')
+});
 
 interface IntentEvent {
   id: string;
@@ -19,23 +25,23 @@ export default function SecondDepositCard() {
   console.log('SecondDepositCard component initialized');
   const [ethAmount, setEthAmount] = useState('0');
   const [usdValue, setUsdValue] = useState('$0.00');
-  const [intentsExpanded, setIntentsExpanded] = useState(false);
+  const [intentsExpanded, setIntentsExpanded] = useState(true);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [totalFeesEarned, setTotalFeesEarned] = useState('0 ETH');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [depositAmount, setDepositAmount] = useState('');
-  const [isDepositing, setIsDepositing] = useState(false);
   const [intentEvents, setIntentEvents] = useState<IntentEvent[]>([]);
   const [error, setError] = useState<Error | null>(null);
   
   const { theme } = useTheme();
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient();
+
+  // Get conservative vault address
+  const conservativeVaultAddress = getContractAddress(CHAIN_IDS.OPTIMISM_SEPOLIA, 'conservativeVault');
   
   // Log chain information for debugging
   useEffect(() => {
     console.log('Connected chain ID:', chainId);
-    console.log('Is Arbitrum:', chainId === 42161);
+    console.log('Is Optimism Sepolia:', chainId === CHAIN_IDS.OPTIMISM_SEPOLIA);
     console.log('Public client chain:', publicClient?.chain?.id);
   }, [chainId, publicClient]);
   
@@ -44,20 +50,29 @@ export default function SecondDepositCard() {
     address: address,
   });
   
-  // Read total assets (TVL) from the contract
+  // Read total assets (TVL) and fees from the contract using Optimism Sepolia client
   const { data: totalAssetsData, refetch: refetchTotalAssets } = useReadContract({
-    address: CONSERVATIVE_VAULT,
+    address: conservativeVaultAddress,
     abi: VaultABI,
     functionName: 'totalAssets',
+    chainId: CHAIN_IDS.OPTIMISM_SEPOLIA // Force Optimism Sepolia
   });
   
-  // Watch for Deposit events to update TVL
+  const { data: totalFeesData, refetch: refetchTotalFees } = useReadContract({
+    address: conservativeVaultAddress,
+    abi: VaultABI,
+    functionName: 'totalGrossFeesEarned',
+    chainId: CHAIN_IDS.OPTIMISM_SEPOLIA
+  });
+  
+  // Watch contract events using Optimism Sepolia
   useWatchContractEvent({
-    address: CONSERVATIVE_VAULT,
+    address: conservativeVaultAddress,
     abi: VaultABI,
     eventName: 'Deposit',
+    chainId: CHAIN_IDS.OPTIMISM_SEPOLIA,
     onLogs: (logs) => {
-      console.log("Deposit event detected - refreshing vault data:", logs);
+      console.log("Deposit event detected on Optimism Sepolia - refreshing vault data:", logs);
       refetchTotalAssets();
       // Also refresh intent events since deposits may trigger new intents
       setTimeout(() => {
@@ -66,64 +81,58 @@ export default function SecondDepositCard() {
     },
   });
   
-  // Watch for Withdraw events to update TVL
   useWatchContractEvent({
-    address: CONSERVATIVE_VAULT,
+    address: conservativeVaultAddress,
     abi: VaultABI,
     eventName: 'Withdraw',
+    chainId: CHAIN_IDS.OPTIMISM_SEPOLIA,
     onLogs: () => {
-      console.log("Withdraw event detected - refreshing TVL");
+      console.log("Withdraw event detected on Optimism Sepolia - refreshing TVL");
       refetchTotalAssets();
     },
   });
   
-  // Watch for IntentFilled events to track fees earned
   useWatchContractEvent({
-    address: CONSERVATIVE_VAULT,
+    address: conservativeVaultAddress,
     abi: VaultABI,
     eventName: 'IntentExecuted',
+    chainId: CHAIN_IDS.OPTIMISM_SEPOLIA,
     onLogs: (logs) => {
-      console.log("IntentExecuted event detected:", logs);
+      console.log("IntentExecuted event detected on Optimism Sepolia:", logs);
       if (logs.length > 0) {
         // Process and add the new intent event
         const newEvents = logs.map(log => {
-          // Format date
-          const date = new Date();
-          const formattedDate = `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
-          
-          // Format random ID - in real app this would come from the event data
-          const randomId = Math.floor(Math.random() * 1000000).toString();
-          
-          // Format fee (this is mocked, in real app would use the actual fee from event)
-          const netFee = `${(Math.random() * 0.01).toFixed(6)} ETH`;
-          
-          return {
-            id: randomId,
-            date: formattedDate,
-            netFee: netFee
-          };
-        });
+          if (log.args) {
+            const { outputAmount, inputAmount, depositId } = log.args;
+            
+            // Check for undefined values and provide defaults
+            const safeOutputAmount = outputAmount || BigInt(0);
+            const safeInputAmount = inputAmount || BigInt(0);
+            const safeDepositId = depositId || BigInt(0);
+            
+            // Calculate fee in ETH (inputAmount - outputAmount)
+            const outputAmountEth = formatEther(safeOutputAmount);
+            const inputAmountEth = formatEther(safeInputAmount);
+            const feeCollected = (Number(inputAmountEth) - Number(outputAmountEth)).toFixed(5);
+            
+            // Format current date
+            const currentDate = new Date().toISOString().split('T')[0];
+            
+            return {
+              id: safeDepositId.toString(),
+              date: currentDate,
+              netFee: `${feeCollected} ETH`
+            };
+          }
+          return null;
+        }).filter((event): event is IntentEvent => event !== null);
         
         setIntentEvents(prev => [...newEvents, ...prev]);
-        updateTotalFeesEarned([...newEvents, ...intentEvents]);
       }
     },
   });
   
-  // Calculate total fees earned from all intent events
-  const updateTotalFeesEarned = (events: IntentEvent[]) => {
-    let total = 0;
-    events.forEach(event => {
-      // Parse the ETH amount from the net fee string
-      const ethAmount = parseFloat(event.netFee.split(' ')[0]);
-      if (!isNaN(ethAmount)) {
-        total += ethAmount;
-      }
-    });
-    setTotalFeesEarned(`${total.toFixed(6)} ETH`);
-  };
-  
-  // Format ETH amount for display
+  // Format ETH amount and fees for display
   useEffect(() => {
     if (totalAssetsData) {
       const formatted = formatEther(totalAssetsData as bigint);
@@ -134,25 +143,30 @@ export default function SecondDepositCard() {
       const usdAmount = Number(formatted) * mockEthPrice;
       setUsdValue(`$${usdAmount.toFixed(2)}`);
     }
-  }, [totalAssetsData]);
+    if (totalFeesData) {
+      const feesValue = formatEther(totalFeesData as bigint);
+      setTotalFeesEarned(`${Number(feesValue).toFixed(5)} ETH`);
+    }
+  }, [totalAssetsData, totalFeesData]);
 
-  // Enhanced polling for vault TVL updates
+  // Enhanced polling for vault TVL and fees updates
   useEffect(() => {
-    console.log("Setting up Conservative Vault TVL polling every 5 seconds");
+    console.log("Setting up Conservative Vault TVL and fees polling on Optimism Sepolia");
     
     // Initial fetch
     refetchTotalAssets();
+    refetchTotalFees();
     
-    // Set up more frequent polling interval
     const interval = setInterval(() => {
-      console.log("Polling Conservative Vault TVL update");
+      console.log("Polling Conservative Vault TVL and fees update on Optimism Sepolia");
       refetchTotalAssets();
-    }, 5000); // Reduced to 5 seconds for more responsive updates
+      refetchTotalFees();
+    }, 20000); // 20 seconds
     
     return () => {
       clearInterval(interval);
     };
-  }, [refetchTotalAssets]);
+  }, [refetchTotalAssets, refetchTotalFees]);
 
   // Setup for contract writes
   const { writeContractAsync, status, error: writeError } = useWriteContract();
@@ -164,25 +178,19 @@ export default function SecondDepositCard() {
     }
   }, [writeError]);
   
-  // Define fetchRecentEvents with improved logging and error handling
+  // Define fetchRecentEvents function at component level
   const fetchRecentEvents = async () => {
     try {
-      console.log("Checking for new vault intents and fees...");
+      console.log("Checking for new vault intents and fees on Optimism Sepolia...");
       
-      if (!publicClient) {
-        console.log("Public client not available, skipping intent check");
-        return;
-      }
-      
-      const blockNumber = await publicClient.getBlockNumber();
-      // Look back ~1000 blocks, convert to number if needed
+      const blockNumber = await optimismSepoliaClient.getBlockNumber();
       const fromBlock = blockNumber > BigInt(1000) ? blockNumber - BigInt(1000) : BigInt(0);
       
-      console.log(`Checking for vault events from block ${fromBlock} to ${blockNumber}`);
+      console.log(`Checking for vault events from block ${fromBlock} to ${blockNumber} on Optimism Sepolia`);
       
-      // Manually get logs for the CONSERVATIVE_VAULT
-      const logs = await publicClient.getLogs({
-        address: CONSERVATIVE_VAULT,
+      // Manually get logs for the CONSERVATIVE_VAULT using Optimism Sepolia client
+      const logs = await optimismSepoliaClient.getLogs({
+        address: conservativeVaultAddress,
         event: {
           type: 'event',
           name: 'IntentExecuted',
@@ -197,13 +205,13 @@ export default function SecondDepositCard() {
         toBlock: blockNumber
       });
       
-      console.log(`Found ${logs.length} new vault intent events`);
+      console.log(`Found ${logs.length} new vault intent events on Optimism Sepolia`);
       
       if (logs.length > 0) {
         // Process the logs
         logs.forEach(log => {
           if (log.args) {
-            const { outputAmount, inputAmount, depositId, originChainId } = log.args;
+            const { outputAmount, inputAmount, depositId } = log.args;
             
             // Check for undefined values and provide defaults
             const safeOutputAmount = outputAmount || BigInt(0);
@@ -216,7 +224,7 @@ export default function SecondDepositCard() {
             const feeCollected = (Number(inputAmountEth) - Number(outputAmountEth)).toFixed(5);
             
             // Format current date
-            const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            const currentDate = new Date().toISOString().split('T')[0];
             
             // Create new intent event
             const newIntent: IntentEvent = {
@@ -231,36 +239,30 @@ export default function SecondDepositCard() {
               if (eventExists) return prevEvents;
               
               const updatedEvents = [newIntent, ...prevEvents];
-              // Update total fees whenever we add a new event
-              updateTotalFeesEarned(updatedEvents);
               return updatedEvents;
             });
           }
         });
       }
     } catch (error) {
-      console.error("Error fetching Conservative Vault events:", error);
+      console.error("Error fetching Conservative Vault events from Optimism Sepolia:", error);
     }
   };
-
-  // Improved intent events polling with shorter interval
+  
+  // Improved intent events polling
   useEffect(() => {
-    if (!publicClient) return;
-    
-    console.log("Setting up aggressive event polling for Conservative Vault");
-    console.log("Current chain ID:", publicClient.chain?.id);
-    console.log("Contract address being monitored:", CONSERVATIVE_VAULT);
+    console.log("Setting up event polling for Conservative Vault on Optimism Sepolia");
     
     // Call once immediately
     fetchRecentEvents();
     
-    // Set up polling interval with much shorter interval for responsive updates
-    const interval = setInterval(fetchRecentEvents, 7500); // Poll every 7.5 seconds
+    // Set up polling interval
+    const interval = setInterval(fetchRecentEvents, 20000); // 20 seconds
     
     return () => {
       clearInterval(interval);
     };
-  }, [publicClient]);
+  }, []); // No dependencies since we're using optimismSepoliaClient
   
   // Listen for account changes, which should trigger a balance refresh
   useEffect(() => {
@@ -312,70 +314,18 @@ export default function SecondDepositCard() {
   
   const isDarkMode = theme === 'dark';
 
-  const handleOpenModal = () => {
-    setIsModalOpen(true);
-  };
+  // Remove all deposit-related handlers and state
+  const handleDeposit = undefined;
+  const handleOpenModal = undefined;
+  const handleCloseModal = undefined;
+  const handleSetMaxAmount = undefined;
+  const isModalOpen = undefined;
+  const depositAmount = undefined;
+  const isDepositing = undefined;
+  const setDepositAmount = undefined;
+  const setIsDepositing = undefined;
+  const setIsModalOpen = undefined;
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setDepositAmount('');
-  };
-
-  const handleSetMaxAmount = () => {
-    if (balanceData) {
-      // Convert to ETH format and set as deposit amount
-      // Formatting to 6 decimal places for better UX
-      const maxAmount = Number(formatEther(balanceData.value)).toFixed(6);
-      setDepositAmount(maxAmount);
-    }
-  };
-
-  const handleDeposit = async () => {
-    if (!depositAmount || !address) return;
-    
-    try {
-      setIsDepositing(true);
-      setError(null);
-      
-      // Parse the deposit amount to wei
-      const parsedAmount = parseEther(depositAmount);
-      
-      const tx = await writeContractAsync({
-        address: CONSERVATIVE_VAULT,
-        abi: VaultABI,
-        functionName: 'deposit',
-        args: [parsedAmount, address]
-      });
-      
-      console.log("Deposit transaction submitted:", tx);
-      
-      // Close modal and reset form after successful deposit
-      handleCloseModal();
-      
-      // Setup aggressive polling for a short period after deposit
-      const refreshInterval = setInterval(() => {
-        console.log("Post-deposit refresh of vault data");
-        refetchTotalAssets();
-        fetchRecentEvents();
-        refetchBalance();
-      }, 3000);
-      
-      // Stop aggressive polling after 30 seconds
-      setTimeout(() => {
-        clearInterval(refreshInterval);
-      }, 30000);
-      
-      // Immediate refresh
-      refetchTotalAssets();
-      refetchBalance();
-    } catch (err) {
-      console.error('Deposit failed:', err);
-      setError(err instanceof Error ? err : new Error('Unknown error occurred'));
-    } finally {
-      setIsDepositing(false);
-    }
-  };
-  
   return (
     <div className={`bg-[var(--card-bg)] text-[var(--foreground)] rounded-2xl p-8 w-full max-w-md mx-auto shadow-lg border border-[var(--border-color)] ${isDarkMode ? 'dark-card' : ''}`}>
       <div className="flex flex-col items-center mb-4">
@@ -470,77 +420,6 @@ export default function SecondDepositCard() {
           </div>
         )}
       </div>
-      
-      <button 
-        onClick={handleOpenModal}
-        className={`w-full hover:opacity-90 transition-opacity text-white py-4 px-6 rounded-full font-medium text-lg tracking-wide ${isDarkMode ? 'bg-gradient-to-r from-blue-600 to-blue-400' : 'bg-[var(--accent-color)]'}`}
-      >
-        DEPOSIT
-      </button>
-
-      {/* Deposit Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className={`bg-[var(--card-bg)] rounded-xl p-6 w-full max-w-md border border-[var(--border-color)] shadow-xl`}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold">Deposit</h3>
-              <button 
-                onClick={handleCloseModal}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-            </div>
-            
-            <div className="mb-6">
-              <div className="relative">
-                <input
-                  type="number"
-                  placeholder="0.0"
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
-                  className="w-full p-3 rounded-lg border border-[var(--border-color)] bg-[var(--background)] text-[var(--foreground)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  min="0"
-                  step="0.0001"
-                />
-                <button 
-                  className="absolute right-3 top-3 text-sm text-blue-500"
-                  onClick={handleSetMaxAmount}
-                >
-                  MAX
-                </button>
-              </div>
-              {balanceData && (
-                <button 
-                  onClick={handleSetMaxAmount}
-                  className="mt-2 text-sm hover:text-blue-500 transition-colors cursor-pointer text-left text-[var(--foreground)] opacity-80"
-                >
-                  Balance: {Number(formatEther(balanceData.value)).toFixed(6)} ETH
-                </button>
-              )}
-              {error && <p className="mt-2 text-red-500 text-sm">{error.message}</p>}
-            </div>
-            
-            <div className="flex space-x-4">
-              <button
-                onClick={handleCloseModal}
-                className="flex-1 py-3 px-4 rounded-full border border-[var(--border-color)] text-[var(--foreground)] font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeposit}
-                disabled={!depositAmount || isDepositing || !isConnected}
-                className={`flex-1 py-3 px-4 rounded-full font-medium text-white ${isDepositing ? 'opacity-70' : 'hover:opacity-90'} ${isDarkMode ? 'bg-gradient-to-r from-blue-600 to-blue-400' : 'bg-[var(--accent-color)]'}`}
-              >
-                {isDepositing ? 'Depositing...' : 'Deposit'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 } 
