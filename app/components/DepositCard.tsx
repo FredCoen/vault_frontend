@@ -94,8 +94,12 @@ export default function DepositCard() {
     abi: VaultABI,
     eventName: 'IntentExecuted',
     chainId: CHAIN_IDS.OPTIMISM_SEPOLIA,
-    onLogs: (logs) => {
+    onLogs: async (logs) => {
       console.log('IntentExecuted event received from Optimism Sepolia:', logs);
+      
+      // Immediately refresh TVL and fees
+      await Promise.all([refetchTotalAssets(), refetchTotalFees()]);
+      
       logs.forEach((log) => {
         console.log('Processing log:', log);
         if (log.args) {
@@ -123,7 +127,6 @@ export default function DepositCard() {
           setIntentEvents(prevEvents => {
             const updatedEvents = [newIntent, ...prevEvents];
             console.log('Updated events list:', updatedEvents);
-            
             return updatedEvents;
           });
         }
@@ -146,25 +149,85 @@ export default function DepositCard() {
     }
   }, [totalAssetsData, totalFeesData]);
   
-  // Add polling for TVL and fees updates
+  // Consolidated polling for all vault data
   useEffect(() => {
-    console.log("Setting up Aggressive Vault TVL and fees polling on Optimism Sepolia");
+    console.log("Setting up consolidated Aggressive Vault data polling on Optimism Sepolia");
+    
+    const fetchAllVaultData = async () => {
+      try {
+        console.log("Polling Aggressive Vault data update on Optimism Sepolia");
+        
+        // Fetch TVL and fees
+        await refetchTotalAssets();
+        await refetchTotalFees();
+        
+        // Get current block number
+        const blockNumber = await optimismSepoliaClient.getBlockNumber();
+        const fromBlock = blockNumber > BigInt(1000) ? blockNumber - BigInt(1000) : BigInt(0);
+        
+        // Fetch recent IntentExecuted events
+        const logs = await optimismSepoliaClient.getLogs({
+          address: aggressiveVaultAddress,
+          event: {
+            type: 'event',
+            name: 'IntentExecuted',
+            inputs: [
+              { name: 'outputAmount', type: 'uint256', indexed: false },
+              { name: 'inputAmount', type: 'uint256', indexed: false },
+              { name: 'depositId', type: 'uint256', indexed: false },
+              { name: 'originChainId', type: 'uint256', indexed: false }
+            ]
+          },
+          fromBlock,
+          toBlock: blockNumber
+        });
+        
+        // Process new events
+        if (logs.length > 0) {
+          const newEvents = logs.map(log => {
+            if (log.args) {
+              const { outputAmount, inputAmount, depositId } = log.args;
+              
+              // Calculate fee in ETH
+              const outputAmountEth = formatEther(outputAmount as bigint);
+              const inputAmountEth = formatEther(inputAmount as bigint);
+              const feeCollected = (Number(inputAmountEth) - Number(outputAmountEth)).toFixed(5);
+              
+              // Format current date
+              const currentDate = new Date().toISOString().split('T')[0];
+              
+              return {
+                id: depositId?.toString() || '0',
+                date: currentDate,
+                netFee: `${feeCollected} ETH`
+              };
+            }
+            return null;
+          }).filter((event): event is IntentEvent => event !== null);
+          
+          // Update events list (avoiding duplicates)
+          setIntentEvents(prevEvents => {
+            const uniqueEvents = newEvents.filter(newEvent => 
+              !prevEvents.some(prevEvent => prevEvent.id === newEvent.id)
+            );
+            return [...uniqueEvents, ...prevEvents];
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching Aggressive Vault data:", error);
+      }
+    };
     
     // Initial fetch
-    refetchTotalAssets();
-    refetchTotalFees();
+    fetchAllVaultData();
     
     // Set up polling interval
-    const interval = setInterval(() => {
-      console.log("Polling Aggressive Vault TVL and fees update on Optimism Sepolia");
-      refetchTotalAssets();
-      refetchTotalFees();
-    }, 20000); // 20 seconds
+    const interval = setInterval(fetchAllVaultData, 20000); // 20 seconds
     
     return () => {
       clearInterval(interval);
     };
-  }, [refetchTotalAssets, refetchTotalFees]);
+  }, [refetchTotalAssets, refetchTotalFees, aggressiveVaultAddress]);
   
   const isDarkMode = theme === 'dark';
 
@@ -181,7 +244,7 @@ export default function DepositCard() {
             priority
           />
         </div>
-        <h1 className="text-xl font-bold mb-4">Aggressive Filler</h1>
+        <h1 className="text-xl font-bold mb-4">Aggressive Filler Vault</h1>
         <div className="text-sm mb-1 text-gray-400">TVL</div>
         <h2 className={`text-2xl md:text-3xl font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>{ethAmount} ETH</h2>
       </div>
@@ -208,7 +271,7 @@ export default function DepositCard() {
         {descriptionExpanded && (
           <div className="mb-5 bg-[var(--background)] rounded-lg p-4">
             <p className="text-[var(--foreground)] opacity-90">
-              This vault strategy captures value by filling intents on the Across protocol. Depositors share in the fees generated. The strategy fills intents after 2 seconds wait and is therefore considered agressive on reorg risk.
+              This vault strategy captures value by filling intents on the Across protocol. Depositors share in the fees generated. The strategy fills intents after 2 seconds wait and is therefore considered aggressive on reorg risk.
             </p>
           </div>
         )}

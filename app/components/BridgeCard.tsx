@@ -97,9 +97,10 @@ export default function BridgeCard() {
         return `0x000000000000000000000000${addr.slice(2)}` as `0x${string}`;
       };
       
-      // Get current block timestamp from Arbitrum Sepolia
+      // Get timestamp from one block in the past
       const block = await publicClient.getBlock();
-      const quoteTimestamp = Number(block.timestamp);
+      const previousBlock = await publicClient.getBlock({ blockNumber: block.number - BigInt(5) });
+      const quoteTimestamp = Number(previousBlock.timestamp);
       const fillDeadline = quoteTimestamp + (15 * 60); // 15 minutes in seconds
       
       // Parse the amount to wei
@@ -109,10 +110,10 @@ export default function BridgeCard() {
       // Choose the exclusive relayer based on amount
       const THRESHOLD = parseEther('0.05'); // 0.05 ETH threshold
       const exclusiveRelayerAddress = parsedAmount >= THRESHOLD
-        ? getContractAddress(CHAIN_IDS.OPTIMISM_SEPOLIA, 'aggressiveVault')
-        : getContractAddress(CHAIN_IDS.OPTIMISM_SEPOLIA, 'conservativeVault');
+        ? getContractAddress(CHAIN_IDS.OPTIMISM_SEPOLIA, 'conservativeVault') // Use conservative for larger amounts
+        : getContractAddress(CHAIN_IDS.OPTIMISM_SEPOLIA, 'aggressiveVault'); // Use aggressive for smaller amounts
 
-      console.log(`Using ${parsedAmount >= THRESHOLD ? 'aggressive' : 'conservative'} vault as exclusive relayer for amount ${amount} ETH`);
+      console.log(`Using ${parsedAmount >= THRESHOLD ? 'conservative' : 'aggressive'} filler vault as exclusive relayer for amount ${amount} ETH`);
 
       // Get token addresses
       const inputTokenAddress = getContractAddress(CHAIN_IDS.ARBITRUM_SEPOLIA, 'weth');

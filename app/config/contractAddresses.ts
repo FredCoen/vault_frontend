@@ -12,13 +12,13 @@ interface ContractAddresses {
 export const CONTRACT_ADDRESSES: ContractAddresses = {
   // Arbitrum Sepolia (421614)
   421614: {
-    spokePoolWrapper: '0xcC85EF8D237D357ff2760CA7e637709f981348F1' as `0x${string}`, // Replace with actual address
+    spokePoolWrapper: '0x05308e8C686464A1C9562b8423f9ba61B6ACF3c5' as `0x${string}`, // Replace with actual address
     weth: '0x980B62Da83eFf3D4576C647993b0c1D7faf17c73' as `0x${string}`,
   },
   // Optimism Sepolia (11155420)
   11155420: {
-    aggressiveVault: '0x39a48DF6e2C06E946bf32A2771169F93F7fA3d43' as `0x${string}`, // Replace with actual address
-    conservativeVault: '0x4E09860bBB0F65Cd8E40d6E2d57Ec63097dd0e91' as `0x${string}`, // Replace with actual address
+    aggressiveVault: '0x5D47478284Bca3658fABCfcC07426a676D424e36' as `0x${string}`, // Replace with actual address
+    conservativeVault: '0x59efD591b9B6F277126C4c2323EdBba346141000' as `0x${string}`, // Replace with actual address
     weth: '0x4200000000000000000000000000000000000006' as `0x${string}`,
   },
 };
