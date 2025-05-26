@@ -2,21 +2,25 @@
 
 import { useState } from "react";
 import { useAccount, useChainId, useSwitchChain, useBalance, useWriteContract, usePublicClient } from "wagmi";
+import { arbitrumSepolia, optimismSepolia } from 'viem/chains';
 import MinimalConnectButton from "./MinimalConnectButton";
 import { EthIcon, ChevronDownIcon } from "./Icons";
 import { SpokePoolWrapperAbi } from "../contracts/SpokePoolWrapperAbi";
 import { parseEther } from "viem";
-import { CONTRACT_ADDRESSES, CHAIN_IDS, getContractAddress } from "../config/contractAddresses";
+import { CHAIN_IDS, getContractAddress } from "../config/contractAddresses";
+import Image from 'next/image';
 
 const ARBITRUM_SEPOLIA = {
   id: CHAIN_IDS.ARBITRUM_SEPOLIA,
-  name: "Arbitrum Sepolia",
+  name: arbitrumSepolia.name,
+  hasIcon: true,
   iconUrl: "https://arbitrum.foundation/favicon.ico"
 } as const;
 
 const OPTIMISM_SEPOLIA = {
   id: CHAIN_IDS.OPTIMISM_SEPOLIA,
-  name: "Optimism Sepolia",
+  name: optimismSepolia.name,
+  hasIcon: true,
   iconUrl: "https://optimism.io/favicon.ico"
 } as const;
 
@@ -195,9 +199,11 @@ export default function BridgeCard() {
             </select>
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
               <div className="w-5 h-5 overflow-hidden rounded-full">
-                <img
+                <Image
                   alt={ARBITRUM_SEPOLIA.name}
                   src={ARBITRUM_SEPOLIA.iconUrl}
+                  width={20}
+                  height={20}
                   className="w-5 h-5"
                 />
               </div>
@@ -239,9 +245,11 @@ export default function BridgeCard() {
             </select>
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
               <div className="w-5 h-5 overflow-hidden rounded-full">
-                <img
+                <Image
                   alt={OPTIMISM_SEPOLIA.name}
                   src={OPTIMISM_SEPOLIA.iconUrl}
+                  width={20}
+                  height={20}
                   className="w-5 h-5"
                 />
               </div>

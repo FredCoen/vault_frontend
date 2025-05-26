@@ -3,11 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useTheme } from '../theme-provider';
 import Image from 'next/image';
-import { useAccount, useWriteContract, useReadContract, useBalance, useWatchContractEvent, usePublicClient } from 'wagmi';
+import { useAccount, useReadContract, useWatchContractEvent, usePublicClient } from 'wagmi';
 import { VaultABI } from '../contracts/VaultABI';
-import { parseEther, formatEther, createPublicClient, http, Log } from 'viem';
+import { formatEther, createPublicClient, http } from 'viem';
 import { optimismSepolia } from 'viem/chains';
-import { CONTRACT_ADDRESSES, CHAIN_IDS, getContractAddress } from "../config/contractAddresses";
+import { CHAIN_IDS, getContractAddress } from "../config/contractAddresses";
 
 // Create a dedicated Optimism Sepolia client
 const optimismSepoliaClient = createPublicClient({
@@ -25,15 +25,14 @@ interface IntentEvent {
 export default function DepositCard() {
   console.log('DepositCard component initialized');
   const [ethAmount, setEthAmount] = useState('0');
-  const [usdValue, setUsdValue] = useState('$0.00');
   const [intentsExpanded, setIntentsExpanded] = useState(true);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [totalFeesEarned, setTotalFeesEarned] = useState('0 ETH');
   const [intentEvents, setIntentEvents] = useState<IntentEvent[]>([]);
-  const [error, setError] = useState<Error | null>(null);
   
   const { theme } = useTheme();
-  const { address, isConnected, chainId } = useAccount();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { address, chainId } = useAccount();
   const publicClient = usePublicClient();
 
   // Get aggressive vault address
@@ -45,11 +44,6 @@ export default function DepositCard() {
     console.log('Is Optimism Sepolia:', chainId === CHAIN_IDS.OPTIMISM_SEPOLIA);
     console.log('Public client chain:', publicClient?.chain?.id);
   }, [chainId, publicClient]);
-  
-  // Get user's ETH balance
-  const { data: balanceData } = useBalance({
-    address: address,
-  });
   
   // Read total assets (TVL) and fees from the contract using Optimism Sepolia client
   const { data: totalAssetsData, refetch: refetchTotalAssets } = useReadContract({
@@ -133,9 +127,6 @@ export default function DepositCard() {
       });
     },
   });
-  
-  // Write contract hook
-  const { writeContractAsync, status } = useWriteContract();
   
   // Update ethAmount and totalFees when data changes
   useEffect(() => {
@@ -287,7 +278,7 @@ export default function DepositCard() {
           className="flex justify-between items-center mb-5 cursor-pointer hover:bg-[var(--background)] p-3 rounded transition-colors"
           onClick={() => setIntentsExpanded(!intentsExpanded)}
         >
-          <span className="text-[var(--foreground)] opacity-80 text-left text-lg">Intents filled</span>
+          <span className="text-[var(--foreground)] opacity-80 text-left text-lg">Intents filled last hour</span>
           <span>
             {intentsExpanded ? (
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -319,7 +310,7 @@ export default function DepositCard() {
               ))
             ) : (
               <div className="py-4 text-center text-[var(--foreground)] opacity-70">
-                No intents filled yet.
+                No intents filled in the last hour.
               </div>
             )}
           </div>

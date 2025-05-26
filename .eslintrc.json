@@ -1,0 +1,10 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "@typescript-eslint/no-unused-vars": ["error", {
+      "varsIgnorePattern": "^address$",
+      "argsIgnorePattern": "^_",
+      "ignoreRestSiblings": true
+    }]
+  }
+} 

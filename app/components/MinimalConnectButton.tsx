@@ -1,6 +1,7 @@
 'use client';
 
 import { ConnectButton } from '@rainbow-me/rainbowkit';
+import Image from 'next/image';
 
 export default function MinimalConnectButton() {
   return (
@@ -50,9 +51,11 @@ export default function MinimalConnectButton() {
                         className="w-4 h-4 overflow-hidden"
                       >
                         {chain.iconUrl && (
-                          <img
+                          <Image
                             alt={chain.name ?? 'Chain icon'}
                             src={chain.iconUrl}
+                            width={16}
+                            height={16}
                             className="w-4 h-4"
                           />
                         )}
