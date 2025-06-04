@@ -2,25 +2,21 @@
 
 import { useState } from "react";
 import { useAccount, useChainId, useSwitchChain, useBalance, useWriteContract, usePublicClient } from "wagmi";
-import { arbitrumSepolia, optimismSepolia } from 'viem/chains';
 import MinimalConnectButton from "./MinimalConnectButton";
 import { EthIcon, ChevronDownIcon } from "./Icons";
 import { SpokePoolWrapperAbi } from "../contracts/SpokePoolWrapperAbi";
 import { parseEther } from "viem";
-import { CHAIN_IDS, getContractAddress } from "../config/contractAddresses";
-import Image from 'next/image';
+import { CONTRACT_ADDRESSES, CHAIN_IDS, getContractAddress } from "../config/contractAddresses";
 
 const ARBITRUM_SEPOLIA = {
   id: CHAIN_IDS.ARBITRUM_SEPOLIA,
-  name: arbitrumSepolia.name,
-  hasIcon: true,
+  name: "Arbitrum Sepolia",
   iconUrl: "https://arbitrum.foundation/favicon.ico"
 } as const;
 
 const OPTIMISM_SEPOLIA = {
   id: CHAIN_IDS.OPTIMISM_SEPOLIA,
-  name: optimismSepolia.name,
-  hasIcon: true,
+  name: "Optimism Sepolia",
   iconUrl: "https://optimism.io/favicon.ico"
 } as const;
 
@@ -111,13 +107,10 @@ export default function BridgeCard() {
       const parsedAmount = parseEther(amount);
       const outputAmount = parsedAmount - parseEther('0.01'); // inputAmount - 0.01 ETH
 
-      // Choose the exclusive relayer based on amount
-      const THRESHOLD = parseEther('0.05'); // 0.05 ETH threshold
-      const exclusiveRelayerAddress = parsedAmount >= THRESHOLD
-        ? getContractAddress(CHAIN_IDS.OPTIMISM_SEPOLIA, 'conservativeVault') // Use conservative for larger amounts
-        : getContractAddress(CHAIN_IDS.OPTIMISM_SEPOLIA, 'aggressiveVault'); // Use aggressive for smaller amounts
+      // Use executor as exclusive relayer
+      const exclusiveRelayerAddress = getContractAddress(CHAIN_IDS.OPTIMISM_SEPOLIA, 'executor');
 
-      console.log(`Using ${parsedAmount >= THRESHOLD ? 'conservative' : 'aggressive'} filler vault as exclusive relayer for amount ${amount} ETH`);
+      console.log(`Using executor as exclusive relayer for amount ${amount} ETH`);
 
       // Get token addresses
       const inputTokenAddress = getContractAddress(CHAIN_IDS.ARBITRUM_SEPOLIA, 'weth');
@@ -148,7 +141,7 @@ export default function BridgeCard() {
           parsedAmount, // inputAmount
           outputAmount, // outputAmount (inputAmount - 0.01 ETH)
           BigInt(CHAIN_IDS.OPTIMISM_SEPOLIA), // destinationChainId (Optimism Sepolia)
-          addressToBytes32(exclusiveRelayerAddress), // exclusiveRelayer (aggressive or conservative vault based on amount)
+          addressToBytes32(exclusiveRelayerAddress), // exclusiveRelayer (executor)
           Number(quoteTimestamp), // quoteTimestamp (current block timestamp) as uint32
           Number(fillDeadline), // fillDeadline (quoteTimestamp + 15 minutes) as uint32
           Number(fillDeadline), // exclusivityParameter (same as fillDeadline) as uint32
@@ -199,11 +192,9 @@ export default function BridgeCard() {
             </select>
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
               <div className="w-5 h-5 overflow-hidden rounded-full">
-                <Image
+                <img
                   alt={ARBITRUM_SEPOLIA.name}
                   src={ARBITRUM_SEPOLIA.iconUrl}
-                  width={20}
-                  height={20}
                   className="w-5 h-5"
                 />
               </div>
@@ -245,11 +236,9 @@ export default function BridgeCard() {
             </select>
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
               <div className="w-5 h-5 overflow-hidden rounded-full">
-                <Image
+                <img
                   alt={OPTIMISM_SEPOLIA.name}
                   src={OPTIMISM_SEPOLIA.iconUrl}
-                  width={20}
-                  height={20}
                   className="w-5 h-5"
                 />
               </div>

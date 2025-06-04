@@ -3,6 +3,7 @@ interface ChainAddresses {
   aggressiveVault?: `0x${string}`;
   conservativeVault?: `0x${string}`;
   weth?: `0x${string}`;
+  executor?: `0x${string}`;
 }
 
 interface ContractAddresses {
@@ -12,14 +13,15 @@ interface ContractAddresses {
 export const CONTRACT_ADDRESSES: ContractAddresses = {
   // Arbitrum Sepolia (421614)
   421614: {
-    spokePoolWrapper: '0x05308e8C686464A1C9562b8423f9ba61B6ACF3c5' as `0x${string}`, // Replace with actual address
+    spokePoolWrapper: '0x3E54E049e347CBde496E7CFf9d07451d6946C8C8' as `0x${string}`, // Replace with actual address
     weth: '0x980B62Da83eFf3D4576C647993b0c1D7faf17c73' as `0x${string}`,
   },
   // Optimism Sepolia (11155420)
   11155420: {
-    aggressiveVault: '0x5D47478284Bca3658fABCfcC07426a676D424e36' as `0x${string}`, // Replace with actual address
-    conservativeVault: '0x59efD591b9B6F277126C4c2323EdBba346141000' as `0x${string}`, // Replace with actual address
+    aggressiveVault: '0xe5F38C01e71e0D755eA56A8a2d3491EB64136A27' as `0x${string}`, // Replace with actual address
+    conservativeVault: '0xb50FDc176Da964c12925fAF7802F807C0Cf430d3' as `0x${string}`, // Replace with actual address
     weth: '0x4200000000000000000000000000000000000006' as `0x${string}`,
+    executor: '0x8E4c0ee82dc4AbA6f98f1f3c61f7F9DD1a496E17' as `0x${string}`, // Replace with actual executor address
   },
 };
 
